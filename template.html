@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Прогноз заболеваемости МКБ в Воронежской области на 2026 год</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .header {
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 5px; }
+        .header p { font-size: 14px; opacity: 0.8; }
+        .container { display: flex; padding: 20px; gap: 20px; max-width: 1600px; margin: 0 auto; }
+        .map-container { flex: 2; background: white; border-radius: 15px; overflow: hidden; box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
+        #map { height: 700px; width: 100%; }
+        .info-panel {
+            flex: 1; background: white; border-radius: 15px; padding: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3); max-height: 700px; overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .legend { background: #f8f9fa; padding: 15px; border-radius: 10px; }
+        .legend h3 { margin-bottom: 10px; color: #333; font-size: 16px; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 8px; }
+        .legend-color { width: 30px; height: 20px; margin-right: 10px; border-radius: 3px; }
+
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: #f0f0f0;
+            cursor: pointer;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        .tab-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        .district-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .district-item {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 4px solid;
+        }
+        .district-item:hover {
+            transform: translateX(5px);
+            background: #f0f0f0;
+        }
+        .district-high { border-left-color: #8B0000; background: #FFF5F5; }
+        .district-medium { border-left-color: #FFA500; background: #FFF8F0; }
+        .district-low { border-left-color: #90EE90; background: #F0FFF0; }
+
+        .district-detail {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+        .district-detail h4 { margin-bottom: 10px; color: #333; }
+        .reason-text {
+            background: #fff;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #555;
+            border-left: 4px solid #667eea;
+        }
+        .statistics { background: #f8f9fa; padding: 15px; border-radius: 10px; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e0e0e0; }
+        .info-label { font-weight: bold; color: #555; }
+        .critical { color: #8B0000; font-weight: bold; }
+        .medium { color: #FFA500; font-weight: bold; }
+        .low { color: #228B22; font-weight: bold; }
+
+        footer { text-align: center; padding: 15px; background: rgba(0,0,0,0.8); color: white; font-size: 12px; }
+        @media (max-width: 900px) { .container { flex-direction: column; } .info-panel { max-height: 400px; } }
+        .leaflet-control-attribution { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏥 Прогноз заболеваемости мочекаменной болезнью (МКБ) в Воронежской области</h1>
+        <p>Прогнозные данные на 2026 год | Показатели на 100 000 населения | Интерактивная карта с подсветкой районов</p>
+    </div>
+    <div class="container">
+        <div class="map-container"><div id="map"></div></div>
+        <div class="info-panel">
+            <div class="legend">
+                <h3>📊 Классификация районов</h3>
+                <div class="legend-item"><div class="legend-color" style="background:#8B0000"></div><span>Высокий уровень (&gt;1075,1)</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#FFA500"></div><span>Средний уровень (438,3-1075,1)</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#90EE90"></div><span>Низкий уровень (&lt;438,3)</span></div>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('info')">📋 Информация</button>
+                <button class="tab-btn" onclick="switchTab('list')">🗺️ Список районов</button>
+            </div>
+
+            <div id="info-tab" class="tab-content active">
+                <div id="district-detail" class="district-detail">
+                    <h4>🏙️ Выберите район</h4>
+                    <p style="color:#999;">Нажмите на район на карте или выберите из списка</p>
+                    <p style="color:#999; margin-top:10px;">💡 При наведении на район он подсвечивается</p>
+                </div>
+            </div>
+
+            <div id="list-tab" class="tab-content">
+                <div class="district-list" id="district-list">
+                    <!-- Список районов будет заполнен через JS -->
+                </div>
+            </div>
+
+            <div class="statistics">
+                <h3>📈 Прогнозная статистика на 2026 год</h3>
+                <div class="info-row"><span class="info-label">Районов с высоким уровнем:</span><span class="info-value critical">{{HIGH_COUNT}}</span></div>
+                <div class="info-row"><span class="info-label">Районов со средним уровнем:</span><span class="info-value medium">{{MEDIUM_COUNT}}</span></div>
+                <div class="info-row"><span class="info-label">Районов с низким уровнем:</span><span class="info-value low">{{LOW_COUNT}}</span></div>
+                <div class="info-row"><span class="info-label">Воронеж:</span><span class="info-value medium">Средний (950.0)</span></div>
+                <div class="info-row"><span class="info-label">Нововоронеж:</span><span class="info-value medium">Средний (850.0)</span></div>
+            </div>
+        </div>
+    </div>
+    <footer>Источник: диссертация, Глава 3, Таблицы 3.4, 3.5, 3.6, 3.7 | Границы районов: OpenStreetMap</footer>
+
+    <script>
+        const districtsData = {{DISTRICTS_DATA}};
+        const geojsonData = {{GEOJSON_DATA}};
+        let geojsonLayer = null;
+        let currentHighlightedLayer = null;
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function showDistrictInfo(districtName) {
+            const data = districtsData[districtName];
+            if (!data) return;
+
+            let levelClass = '';
+            if (data.level === 'Высокий') levelClass = 'critical';
+            else if (data.level === 'Средний') levelClass = 'medium';
+            else levelClass = 'low';
+
+            let displayName = districtName;
+            if (!districtName.includes('Воронеж')) {
+                displayName = districtName + ' район';
+            }
+
+            document.getElementById('district-detail').innerHTML =
+                '<h4>🏙️ ' + displayName + '</h4>' +
+                '<div class="info-row"><span class="info-label">Уровень:</span><span class="info-value ' + levelClass + '">' + data.level + ' (' + data.total_morbidity.toFixed(1) + ')</span></div>' +
+                '<div class="info-row"><span class="info-label">Прогноз общей заболеваемости (2026):</span><span class="info-value">' + data.total_morbidity.toFixed(1) + ' на 100 тыс.</span></div>' +
+                '<div class="info-row"><span class="info-label">Прогноз первичной заболеваемости:</span><span class="info-value">' + data.primary_morbidity.toFixed(1) + ' на 100 тыс.</span></div>' +
+                '<div class="info-row"><span class="info-label">Прогноз диспансерного учета:</span><span class="info-value">' + data.dispensary.toFixed(1) + ' на 100 тыс.</span></div>' +
+                '<div class="reason-text"><strong>🔍 Вероятные причины:</strong><br>' + data.reason + '</div>';
+
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('info-tab').classList.add('active');
+            document.querySelector('.tab-btn').classList.add('active');
+        }
+
+        function matchDistrictName(geoName) {
+            let cleanName = geoName.replace(/ район$/i, '').replace(/ёвский/i, 'евский');
+            if (districtsData[cleanName]) return cleanName;
+            for (const key of Object.keys(districtsData)) {
+                if (cleanName.includes(key) || key.includes(cleanName)) return key;
+            }
+            return null;
+        }
+
+        function styleFeature(feature) {
+            const geoName = feature.properties?.district || feature.properties?.name || '';
+            const matchedKey = matchDistrictName(geoName);
+            const fillColor = matchedKey ? districtsData[matchedKey].color : '#CCCCCC';
+            return {
+                fillColor: fillColor,
+                color: '#ffffff',
+                weight: 1.5,
+                opacity: 0.8,
+                fillOpacity: 0.65
+            };
+        }
+
+        function highlightFeature(e) {
+            const layer = e.target;
+            if (currentHighlightedLayer && currentHighlightedLayer !== layer) {
+                geojsonLayer.resetStyle(currentHighlightedLayer);
+            }
+            layer.setStyle({
+                weight: 3,
+                color: '#ffff00',
+                fillOpacity: 0.9
+            });
+            currentHighlightedLayer = layer;
+            if (!L.Browser.ie && !L.Browser.opera) {
+                layer.bringToFront();
+            }
+        }
+
+        function resetHighlight(e) {
+            if (geojsonLayer) {
+                geojsonLayer.resetStyle(e.target);
+            }
+            currentHighlightedLayer = null;
+        }
+
+        function onFeatureClick(e) {
+            const feature = e.target.feature;
+            const geoName = feature.properties?.district || feature.properties?.name || '';
+            const matchedKey = matchDistrictName(geoName);
+            if (matchedKey) {
+                showDistrictInfo(matchedKey);
+            }
+        }
+
+        function onEachFeature(feature, layer) {
+            const geoName = feature.properties?.district || feature.properties?.name || '';
+            const matchedKey = matchDistrictName(geoName);
+
+            if (matchedKey && districtsData[matchedKey]) {
+                const data = districtsData[matchedKey];
+                let displayName = matchedKey.includes('Воронеж') ? matchedKey : matchedKey + ' район';
+                layer.bindTooltip(
+                    '<b>' + displayName + '</b><br>Прогноз: ' + data.total_morbidity.toFixed(1) + '<br>Уровень: ' + data.level,
+                    { sticky: true, direction: 'top' }
+                );
+            }
+
+            layer.on({
+                mouseover: highlightFeature,
+                mouseout: resetHighlight,
+                click: onFeatureClick
+            });
+        }
+
+        const map = L.map('map').setView([51.2, 40.2], 8);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+
+        if (geojsonData) {
+            geojsonLayer = L.geoJson(geojsonData, {
+                style: styleFeature,
+                onEachFeature: onEachFeature
+            }).addTo(map);
+            map.fitBounds(geojsonLayer.getBounds());
+        } else {
+            document.getElementById('district-detail').innerHTML =
+                '<h4>⚠️ Ошибка</h4><p style="color:#999;">Файл с границами районов не найден.</p>';
+        }
+
+        function buildDistrictList() {
+            const districts = Object.entries(districtsData);
+            const highDistricts = districts.filter(d => d[1].level === 'Высокий').sort((a,b) => b[1].total_morbidity - a[1].total_morbidity);
+            const mediumDistricts = districts.filter(d => d[1].level === 'Средний').sort((a,b) => b[1].total_morbidity - a[1].total_morbidity);
+            const lowDistricts = districts.filter(d => d[1].level === 'Низкий').sort((a,b) => b[1].total_morbidity - a[1].total_morbidity);
+
+            let html = '';
+
+            if (highDistricts.length > 0) {
+                html += '<h4 style="color:#8B0000; margin:10px 0 5px 0;">🔴 Высокий уровень</h4>';
+                highDistricts.forEach(([name, data]) => {
+                    let displayName = name.includes('Воронеж') ? name : name + ' район';
+                    html += '<div class="district-item district-high" onclick="showDistrictInfo(\'' + name + '\')"><strong>' + displayName + '</strong> &mdash; ' + data.total_morbidity.toFixed(1) + ' на 100 тыс.</div>';
+                });
+            }
+
+            if (mediumDistricts.length > 0) {
+                html += '<h4 style="color:#FFA500; margin:15px 0 5px 0;">🟡 Средний уровень</h4>';
+                mediumDistricts.forEach(([name, data]) => {
+                    let displayName = name.includes('Воронеж') ? name : name + ' район';
+                    html += '<div class="district-item district-medium" onclick="showDistrictInfo(\'' + name + '\')"><strong>' + displayName + '</strong> &mdash; ' + data.total_morbidity.toFixed(1) + ' на 100 тыс.</div>';
+                });
+            }
+
+            if (lowDistricts.length > 0) {
+                html += '<h4 style="color:#228B22; margin:15px 0 5px 0;">🟢 Низкий уровень</h4>';
+                lowDistricts.forEach(([name, data]) => {
+                    let displayName = name.includes('Воронеж') ? name : name + ' район';
+                    html += '<div class="district-item district-low" onclick="showDistrictInfo(\'' + name + '\')"><strong>' + displayName + '</strong> &mdash; ' + data.total_morbidity.toFixed(1) + ' на 100 тыс.</div>';
+                });
+            }
+
+            document.getElementById('district-list').innerHTML = html;
+        }
+
+        buildDistrictList();
+
+        const firstDistrict = Object.keys(districtsData)[0];
+        if (firstDistrict) setTimeout(function() { showDistrictInfo(firstDistrict); }, 500);
+    </script>
+</body>
+</html>
